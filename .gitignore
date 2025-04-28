@@ -172,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Large files
+mp4_file/
+wav_file/
+denoised_audio/
