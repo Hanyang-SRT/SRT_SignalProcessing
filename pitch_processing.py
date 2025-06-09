@@ -11,6 +11,7 @@ import soundfile as sf
 import matplotlib.pyplot as plt
 from scipy import interpolate 
 from glob import glob
+from matplotlib.font_manager import FontProperties
 
 def convert_to_wav(input_file, output_file=None, sample_rate=16000):
     """오디오 파일을 WAV 형식으로 변환"""
@@ -85,7 +86,6 @@ def extract_timestamps(audio_file):
         import torch
         
         print("Whisper 모델 로딩 중...")
-        # 기본적으로 'base' 모델 사용 (더 정확한 결과를 원하면 'small', 'medium', 'large' 사용 가능)
         model = whisper.load_model("large")
         
         # 한국어 인식 명시적 설정
@@ -274,6 +274,103 @@ def visualize_pitch_relative(audio_file, phoneme_chunks=None, output_dir=None):
         print(f"Error visualizing relative pitch: {e}")
         traceback.print_exc()
         return False
+
+def process_user_voice(user_voice_path):
+    """사용자 음성 파일 처리 및 음소 정보 반환"""
+    if not os.path.exists(user_voice_path):
+        print("사용자 음성 파일이 존재하지 않습니다.")
+        return None, None
+
+    base_name = os.path.splitext(os.path.basename(user_voice_path))[0]
+
+    # 디렉토리 준비
+    wav_dir = "./wav_file"
+    denoise_dir = "./denoised_audio"
+    viz_dir = "./visualization"
+    os.makedirs(wav_dir, exist_ok=True)
+    os.makedirs(denoise_dir, exist_ok=True)
+    os.makedirs(viz_dir, exist_ok=True)
+
+    # WAV 변환
+    wav_path = os.path.join(wav_dir, base_name + ".wav")
+    converted = convert_to_wav(user_voice_path, wav_path)
+    if not converted:
+        return None, None
+
+    # 노이즈 제거
+    denoised_path = os.path.join(denoise_dir, base_name + "_denoised.wav")
+    denoised = spectral_subtraction(converted, denoised_path)
+    if not denoised:
+        return None, None
+
+    # 음소 추출
+    print("사용자 음성에서 음소 추출 중...")
+    timestamps = extract_timestamps(denoised)
+    phoneme_chunks = timestamps["phoneme_chunks"]
+
+    # 시각화
+    visualize_pitch_relative(denoised, phoneme_chunks, viz_dir)
+
+    return denoised_path, phoneme_chunks
+
+def compare_pitch_curves(drama_path, drama_phonemes, user_path, user_phonemes, output_path="visualization/compare_phoneme_pitch.png"):
+    """두 오디오 파일의 전체 피치 곡선을 한 그래프에 비교 시각화"""
+    def extract_pitch_per_phoneme(audio_path, phonemes):
+        y, sr = librosa.load(audio_path, sr=None)
+        f0, _, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'), sr=sr)
+        times = librosa.times_like(f0, sr=sr)
+
+        positions, pitches, texts = [], [], []
+
+        for chunk in phonemes:
+            start, end = chunk['timestamp']
+            if start is None or end is None: continue
+
+            start_idx = np.argmin(np.abs(times - start))
+            end_idx = np.argmin(np.abs(times - end))
+            segment = f0[start_idx:end_idx+1]
+            valid = segment[~np.isnan(segment)]
+
+            if len(valid) == 0:
+                continue
+
+            pitch = np.median(valid)
+            center = (start + end) / 2
+            positions.append(center)
+            pitches.append(pitch)
+            texts.append(chunk['text'])
+
+        return positions, pitches, texts
+
+    # 피치 추출
+    d_pos, d_pitch, d_texts = extract_pitch_per_phoneme(drama_path, drama_phonemes)
+    u_pos, u_pitch, u_texts = extract_pitch_per_phoneme(user_path, user_phonemes)
+
+    # 시각화
+    plt.figure(figsize=(14, 7), facecolor='white')
+    plt.plot(d_pos, d_pitch, label="Drama", color='blue', linewidth=2)
+    plt.scatter(d_pos, d_pitch, color='blue')
+
+    plt.plot(u_pos, u_pitch, label="User", color='green', linewidth=2)
+    plt.scatter(u_pos, u_pitch, color='green')
+
+    # 텍스트 표시 (드라마 음성 기준)
+    for i, text in enumerate(d_texts):
+        plt.text(d_pos[i], d_pitch[i] + 5, text, fontsize=16, ha='center',
+                 fontproperties=FontProperties(family='AppleGothic'),
+                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+
+    plt.title("Pitch Comparison by Phoneme", fontsize=16)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Pitch (Hz)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f"✔️ 비교 시각화 저장 완료: {output_path}")
 
 # def visualize_pitch(audio_file, phoneme_chunks=None, output_dir=None):
 #     """ 하나의 플롯에서 인식된 음소 부분에 초점을 맞춘 피치 곡선 시각화 """
@@ -517,16 +614,40 @@ def main():
         print("Content selection has been cancelled.")
         return
     
-    # 사용자 파일명 입력
-    user_filename = input("\nEnter the specific file name to be processed (extension can be omitted): ").strip()
-    selected_file = select_file(drama_dir, user_filename)
+    # 컨텐츠 파일명 입력
+    drama_filename = input("\nEnter the drama file name to process (without extension): ").strip()
+    drama_file = select_file(drama_dir, drama_filename)
     
-    if not selected_file:
+    if not drama_file:
         print("The file to process could not be found. The program will terminate.")
         return
     
     # 파일 처리
-    process_single_mp4_file(selected_file)
+    # process_single_mp4_file(selected_file)
+    # 드라마 처리
+    base_name = os.path.splitext(os.path.basename(drama_file))[0]
+    drama_denoised_path = os.path.join("denoised_audio", f"{base_name}_denoised.wav")
+    # process_single_mp4_file(drama_file)
+
+    # 2. 사용자 음성 처리
+    user_voice_path = input("\nEnter the path to your recorded voice (e.g., my_voice.wav): ").strip()
+    if not os.path.exists(user_voice_path):
+        print("User voice file not found.")
+        return
+    
+    user_base = os.path.splitext(os.path.basename(user_voice_path))[0]
+    user_denoised_path = os.path.join("denoised_audio", f"{user_base}_denoised.wav")
+    process_user_voice(user_voice_path)
+
+    # 3. 겹쳐 시각화
+    print("\nCreating pitch comparison visualization...")
+    compare_pitch_curves(
+                            drama_path=drama_denoised_path,
+                            drama_phonemes=extract_timestamps(drama_denoised_path)['phoneme_chunks'],
+                            user_path=user_denoised_path,
+                            user_phonemes=extract_timestamps(user_denoised_path)['phoneme_chunks'],
+                            output_path="visualization/compare_phoneme_pitch.png"
+                        )
 
 if __name__ == "__main__":
     main()
