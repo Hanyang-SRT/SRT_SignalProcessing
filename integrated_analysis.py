@@ -35,7 +35,6 @@ def spectral_subtraction(audio_file, output_file, alpha=2.0, beta=0.05):
         print(f"Error during spectral subtraction: {e}")
         return None
 
-
 # Whisper로 텍스트 및 타임스탬프 추출
 def transcribe_with_whisper(audio_file):
     pipe = pipeline("automatic-speech-recognition", model="openai/whisper-small", return_timestamps="word")
@@ -50,7 +49,6 @@ def transcribe_with_whisper(audio_file):
         chunk['timestamp'] = (round(start, 2), round(end, 2))
 
     return result
-
 
 # 단어별 intensity 계산
 def get_intensity_per_chunk(audio_file, chunks):
@@ -108,7 +106,6 @@ def get_duration_per_chunk(chunks, audio_file, min_duration=0.05, max_duration=2
         valid_chunks.append(chunk)
 
     return valid_chunks, durations
-
 
 # 상대 duration 계산
 def get_relative_durations(durations):
