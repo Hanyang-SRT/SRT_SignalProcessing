@@ -75,7 +75,10 @@ def get_duration_per_chunk(chunks, audio_file, min_duration=0.05, max_duration=2
     y, sr = librosa.load(audio_file, sr=None)
     total_audio_duration = len(y) / sr
 
-    for chunk in chunks:
+    frame_length = 2048
+    hop_length = 512
+
+    for i, chunk in enumerate(chunks):
         start_time, end_time = chunk['timestamp']
         if end_time is None:
             end_time = total_audio_duration
@@ -85,24 +88,52 @@ def get_duration_per_chunk(chunks, audio_file, min_duration=0.05, max_duration=2
         end_sample = int(end_time * sr)
         segment = y[start_sample:end_sample]
 
-        # 앞부분 무음 제거
-        frame_length = 2048
-        hop_length = 512
-        rms = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
+        # === 첫 단어 or 마지막 단어일 때만 무성음 제거 적용 ===
+        if i == 0 or i == len(chunks) - 1:
+            # 앞부분 무성음 제거
+            rms = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
+            non_silent_frames = np.where(rms > silence_threshold)[0]
 
-        non_silent_frames = np.where(rms > silence_threshold)[0]
-        if len(non_silent_frames) > 0:
-            first_voice_frame = non_silent_frames[0]
-            start_offset = first_voice_frame * hop_length
-            segment = segment[start_offset:]
-            start_time += start_offset / sr
+            if len(non_silent_frames) > 0:
+                first_voice_frame = non_silent_frames[0]
+                start_offset = first_voice_frame * hop_length
+                segment = segment[start_offset:]
+                start_time += start_offset / sr
 
-        duration = end_time - start_time
+                # 뒷부분 무성음 제거
+                rms = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
+                non_silent_frames = np.where(rms > silence_threshold)[0]
+
+                if len(non_silent_frames) > 0:
+                    last_voice_frame = non_silent_frames[-1]
+                    end_offset = (last_voice_frame + 1) * hop_length
+                    segment = segment[:end_offset]
+                    end_time = start_time + len(segment) / sr
+                else:
+                    continue  # 전체 silence면 skip
+            else:
+                continue  # 전체 silence면 skip
+
+            # duration 계산
+            duration = end_time - start_time
+            chunk['timestamp'] = (start_time, end_time)
+
+        else:
+            # 중간 단어 → pause 포함 (무성음 제거 X)
+            next_start_time, _ = chunks[i + 1]['timestamp']
+            if next_start_time > start_time:
+                duration = next_start_time - start_time
+                chunk['timestamp'] = (start_time, next_start_time)
+            else:
+                # fallback 처리
+                duration = end_time - start_time
+                chunk['timestamp'] = (start_time, end_time)
+
+        # duration 검증
         if duration < min_duration or duration > max_duration:
             continue
 
         durations.append(duration)
-        chunk['timestamp'] = (start_time, end_time)
         valid_chunks.append(chunk)
 
     return valid_chunks, durations

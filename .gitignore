@@ -178,3 +178,6 @@ mp4_clip/
 wav_file/
 denoised_audio/
 .DS_Store
+
+visualization/
+*.wav
