@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import re
 from dtw import accelerated_dtw
+from scipy.interpolate import interp1d
+from g2pk import G2p
+g2p = G2p()
+
 
 # 노이즈 제거 함수
 def spectral_subtraction(audio_file, output_file, alpha=2.0, beta=0.05):
@@ -49,6 +53,72 @@ def transcribe_with_whisper(audio_file):
         chunk['timestamp'] = (round(start, 2), round(end, 2))
 
     return result
+
+# pitch 추출을 위한 음소 단위 분해
+def extract_phonemes_from_chunks(chunks):
+    phonemes = []
+    for chunk in chunks:
+        word = chunk["text"].strip()
+        start, end = chunk["timestamp"]
+        duration = end - start
+        # g2pk로 음소 변환
+        chars = list(g2p(word))
+        step = duration / max(1, len(chars))
+        for i, c in enumerate(chars):
+            phonemes.append({
+                "text": c,
+                "timestamp": [start + i * step, start + (i + 1) * step]
+            })
+    return phonemes
+
+# 음소 단위 pitch 추출
+def extract_pitch_sequence(audio_path, phonemes):
+    y, sr = librosa.load(audio_path, sr=None)
+    f0, _, _ = librosa.pyin(
+        y, 
+        fmin=librosa.note_to_hz('C2'), 
+        fmax=librosa.note_to_hz('C7'), 
+        sr=sr
+    )
+    times = librosa.times_like(f0, sr=sr)
+    pitches = []
+    labels = []
+    for ph in phonemes:
+        start, end = ph['timestamp']
+        start_idx = np.argmin(np.abs(times - start))
+        end_idx = np.argmin(np.abs(times - end))
+        segment = f0[start_idx:end_idx+1]
+        segment = segment[~np.isnan(segment)]
+        pitch = np.median(segment) if len(segment) > 0 else np.nan
+        pitches.append(pitch)
+        labels.append(ph['text'])
+    return pitches, labels
+
+# 발음 기반 음성 보간 : 두 음성 데이터(사용자, native)의 길이가 다를 때 보간
+def interpolate_pitch(pitches):
+    x = np.arange(len(pitches))
+    pitches = np.array(pitches)
+    valid = ~np.isnan(pitches)
+    if np.sum(valid) < 2:
+        return pitches
+    f_interp = interp1d(x[valid], pitches[valid], kind='linear', fill_value='extrapolate')
+    return f_interp(x)
+
+
+def align_pitch_by_phoneme(native_pitch, native_labels, user_pitch, user_labels):
+    matched_native = []
+    matched_user = []
+    matched_labels = []
+    native_dict = {label: pitch for label, pitch in zip(native_labels, native_pitch)}
+    for u_label, u_pitch in zip(user_labels, user_pitch):
+        if u_label in native_dict:
+            matched_labels.append(u_label)
+            matched_native.append(native_dict[u_label])
+            matched_user.append(u_pitch)
+    return matched_user, matched_native, matched_labels
+
+
+
 
 # 단어별 intensity 계산
 def get_intensity_per_chunk(audio_file, chunks):
@@ -232,7 +302,28 @@ def run_integrated_analysis(user_audio, ref_audio):
     user_chunks = sorted(user_result['chunks'], key=lambda x: x['timestamp'][0] if x['timestamp'] else float('inf'))
     ref_chunks = sorted(ref_result['chunks'], key=lambda x: x['timestamp'][0] if x['timestamp'] else float('inf'))
 
-    # 3. Intensity 분석
+    # 3. 음소 추출 및 pitch 분석
+    user_phonemes = extract_phonemes_from_chunks(user_chunks)
+    ref_phonemes = extract_phonemes_from_chunks(ref_chunks)
+
+    user_pitch, user_labels = extract_pitch_sequence(user_denoised, user_phonemes)
+    ref_pitch, ref_labels = extract_pitch_sequence(ref_denoised, ref_phonemes)
+    
+    user_pitch_interp = interpolate_pitch(user_pitch)
+    ref_pitch_interp = interpolate_pitch(ref_pitch)     
+    
+    user_pitch_aligned, ref_pitch_aligned, aligned_labels = align_pitch_by_phoneme(
+        ref_pitch_interp, ref_labels, user_pitch_interp, user_labels
+    )
+
+    # Pitch 점수 게산
+    if len(user_pitch_aligned) > 0 and len(ref_pitch_aligned) > 0:
+        pitch_diff = np.array(user_pitch_aligned) - np.array(ref_pitch_aligned)
+        pitch_score = max(0, int(100 - np.nanmean(np.abs(pitch_diff)) / 10))
+    else:
+        pitch_score = 0
+
+    # 4. Intensity 분석
     words_usr, intensities_usr = get_intensity_per_chunk(user_denoised, user_chunks)
     words_ref, intensities_ref = get_intensity_per_chunk(ref_denoised, ref_chunks)
 
@@ -240,7 +331,7 @@ def run_integrated_analysis(user_audio, ref_audio):
         words_ref, intensities_ref, words_usr, intensities_usr
     )
 
-    # 4. Duration 분석
+    # 5. Duration 분석
     user_chunks_filtered, user_durations = get_duration_per_chunk(user_chunks, user_denoised)
     ref_chunks_filtered, ref_durations = get_duration_per_chunk(ref_chunks, ref_denoised)
 
@@ -249,8 +340,13 @@ def run_integrated_analysis(user_audio, ref_audio):
     )
 
 
-    # 5. JSON 결과 반환
+    # 6. JSON 결과 반환
     result = {
+        "pitch": {
+            "user": [round(float(p), 2) if not np.isnan(p) else None for p in user_pitch_aligned],
+            "native": [round(float(p), 2) if not np.isnan(p) else None for p in ref_pitch_aligned],
+            "score": int(pitch_score)
+        },
         "intensity": {
             "user": [round(float(z), 2) for z in usr_z],
             "native": [round(float(z), 2) for z in ref_z],
