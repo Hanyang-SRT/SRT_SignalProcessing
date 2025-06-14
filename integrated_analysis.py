@@ -1,4 +1,4 @@
-from transformers import pipeline
+ from transformers import pipeline
 import librosa
 import numpy as np
 import soundfile as sf
@@ -34,67 +34,58 @@ except Exception as e:
 
 # 노이즈 제거 함수
 def spectral_subtraction(audio_file, output_file, alpha=2.0, beta=0.05):
-    try:
-        logger.info(f"노이즈 제거 시작: {audio_file}")
-        y, sr = librosa.load(audio_file, sr=None)
-        frame_length = 1024
-        hop_length = 512
-        D = librosa.stft(y, n_fft=frame_length, hop_length=hop_length, win_length=frame_length)
-        magnitude, phase = np.abs(D), np.angle(D)
-        power = magnitude**2
-        noise_frames = min(int(0.5 * sr / hop_length), 10)
-        noise_power = np.mean(power[:, :noise_frames], axis=1, keepdims=True)
-        gain = np.maximum(1 - alpha * (noise_power / (power + 1e-10)), beta)
-        enhanced_magnitude = magnitude * gain
-        enhanced_D = enhanced_magnitude * np.exp(1j * phase)
-        enhanced_y = librosa.istft(enhanced_D, hop_length=hop_length, win_length=frame_length)
+    y, sr = librosa.load(audio_file, sr=None)
+    frame_length = 1024
+    hop_length = 512
+    D = librosa.stft(y, n_fft=frame_length, hop_length=hop_length, win_length=frame_length)
+    magnitude, phase = np.abs(D), np.angle(D)
+    power = magnitude**2
+    noise_frames = min(int(0.5 * sr / hop_length), 10)
+    noise_power = np.mean(power[:, :noise_frames], axis=1, keepdims=True)
+    gain = np.maximum(1 - alpha * (noise_power / (power + 1e-10)), beta)
+    enhanced_magnitude = magnitude * gain
+    enhanced_D = enhanced_magnitude * np.exp(1j * phase)
+    enhanced_y = librosa.istft(enhanced_D, hop_length=hop_length, win_length=frame_length)
 
-        if len(enhanced_y) > len(y):
-            enhanced_y = enhanced_y[:len(y)]
-        elif len(enhanced_y) < len(y):
-            enhanced_y = np.pad(enhanced_y, (0, len(y) - len(enhanced_y)))
+    if len(enhanced_y) > len(y):
+        enhanced_y = enhanced_y[:len(y)]
+    elif len(enhanced_y) < len(y):
+        enhanced_y = np.pad(enhanced_y, (0, len(y) - len(enhanced_y)))
 
-        sf.write(output_file, enhanced_y, sr)
-        logger.info(f"노이즈 제거 완료: {output_file}")
-        return output_file
-    except Exception as e:
-        logger.error(f"노이즈 제거 실패: {e}")
-        return None
+    sf.write(output_file, enhanced_y, sr)
+    logger.info(f"노이즈 제거 완료: {output_file}")
+    return output_file
 
 # Whisper로 텍스트 및 타임스탬프 추출
 def transcribe_with_whisper(audio_file):
-    try:
-        logger.info(f"Whisper 전사 시작: {audio_file}")
-        pipe = pipeline(
-            "automatic-speech-recognition", 
-            model="openai/whisper-small", 
-            return_timestamps="word",
-            device="cpu" ,  # 명시적으로 CPU 사용
-            torch_dtype=torch.float32
-        )
-        result = pipe(audio_file)
+    # try:
+    logger.info(f"Whisper 전사 시작: {audio_file}")
+    pipe = pipeline(
+        "automatic-speech-recognition", 
+        model="openai/whisper-small", 
+        return_timestamps="word",
+        device="cpu" ,  # 명시적으로 CPU 사용
+        torch_dtype=torch.float32
+    )
+    result = pipe(audio_file)
 
-        if not result or 'chunks' not in result:
-            logger.error("Whisper 결과가 비어있거나 chunks가 없음")
-            return None
-
-        duration = librosa.get_duration(path=audio_file)
-
-        for chunk in result['chunks']:
-            if chunk.get('timestamp'):
-                start, end = chunk['timestamp']
-                if end is None:
-                    end = duration
-                chunk['timestamp'] = (round(start, 2), round(end, 2))
-            else:
-                logger.warning(f"타임스탬프가 없는 청크 발견: {chunk}")
-
-        logger.info(f"Whisper 전사 완료: {len(result['chunks'])}개 청크")
-        return result
-    except Exception as e:
-        logger.error(f"Whisper 전사 실패: {e}")
-        traceback.print_exc()
+    if not result or 'chunks' not in result:
+        logger.error("Whisper 결과가 비어있거나 chunks가 없음")
         return None
+
+    duration = librosa.get_duration(path=audio_file)
+
+    for chunk in result['chunks']:
+        if chunk.get('timestamp'):
+            start, end = chunk['timestamp']
+            if end is None:
+                end = duration
+            chunk['timestamp'] = (round(start, 2), round(end, 2))
+        else:
+            logger.warning(f"타임스탬프가 없는 청크 발견: {chunk}")
+
+    logger.info(f"Whisper 전사 완료: {len(result['chunks'])}개 청크")
+    return result
 
 # pitch 추출을 위한 음소 단위 분해
 def extract_phonemes_from_chunks(chunks):
@@ -105,10 +96,7 @@ def extract_phonemes_from_chunks(chunks):
             return []
         
         phonemes = []
-        for chunk in chunks:
-            if not chunk.get('text') or not chunk.get('timestamp'):
-                continue
-                
+        for chunk in chunks:                
             word = chunk["text"].strip()
             start, end = chunk["timestamp"]
             duration = end - start
@@ -212,219 +200,196 @@ def align_pitch_by_phoneme(native_pitch, native_labels, user_pitch, user_labels)
 
 # 단어별 intensity 계산
 def get_intensity_per_chunk(audio_file, chunks):
-    try:
-        logger.info("Intensity 계산 시작")
-        y, sr = librosa.load(audio_file, sr=None)
-        intensities = []
-        words = []
-        
-        for chunk in chunks:
-            if not chunk.get('timestamp') or not chunk.get('text'):
-                continue
-                
-            start_time, end_time = chunk['timestamp']
-            if start_time is None or end_time is None:
-                continue
-                
-            start_sample = int(start_time * sr)
-            end_sample = int(end_time * sr)
-            segment = y[start_sample:end_sample]
-
-            rms = np.sqrt(np.mean(segment**2)) if len(segment) > 0 else 0.0
-            intensities.append(rms)
-            words.append(chunk['text'])
+    # try:
+    logger.info("Intensity 계산 시작")
+    y, sr = librosa.load(audio_file, sr=None)
+    intensities = []
+    words = []
+    
+    for chunk in chunks:
+        # if not chunk.get('timestamp') or not chunk.get('text'):
+        #     continue
             
-        logger.info(f"Intensity 계산 완료: {len(intensities)}개 값")
-        return words, intensities
-    except Exception as e:
-        logger.error(f"Intensity 계산 실패: {e}")
-        return [], []
+        start_time, end_time = chunk['timestamp']
+        if start_time is None or end_time is None:
+            continue
+            
+        start_sample = int(start_time * sr)
+        end_sample = int(end_time * sr)
+        segment = y[start_sample:end_sample]
+
+        rms = np.sqrt(np.mean(segment**2)) if len(segment) > 0 else 0.0
+        intensities.append(rms)
+        words.append(chunk['text'])
+        
+    logger.info(f"Intensity 계산 완료: {len(intensities)}개 값")
+    return words, intensities
 
 # 유효 duration 추출
 def get_duration_per_chunk(chunks, audio_file, min_duration=0.05, max_duration=2.0, silence_threshold=0.01):
-    try:
-        logger.info("Duration 계산 시작")
-        durations = []
-        valid_chunks = []
-        y, sr = librosa.load(audio_file, sr=None)
-        total_audio_duration = len(y) / sr
+    # try:
+    logger.info("Duration 계산 시작")
+    durations = []
+    valid_chunks = []
+    y, sr = librosa.load(audio_file, sr=None)
+    total_audio_duration = len(y) / sr
 
-        frame_length = 2048
-        hop_length = 512
+    frame_length = 2048
+    hop_length = 512
 
-        for i, chunk in enumerate(chunks):
-            if not chunk.get('timestamp'):
-                continue
-                
-            start_time, end_time = chunk['timestamp']
-            if end_time is None:
-                end_time = total_audio_duration
-                chunk['timestamp'] = (start_time, end_time)
+    for i, chunk in enumerate(chunks):
+        start_time, end_time = chunk['timestamp']
+        if end_time is None:
+            end_time = total_audio_duration
+            chunk['timestamp'] = (start_time, end_time)
 
-            start_sample = int(start_time * sr)
-            end_sample = int(end_time * sr)
-            segment = y[start_sample:end_sample]
+        start_sample = int(start_time * sr)
+        end_sample = int(end_time * sr)
+        segment = y[start_sample:end_sample]
 
-            # 첫 단어 or 마지막 단어일 때만 무성음 제거 적용
-            if i == 0 or i == len(chunks) - 1:
+        # 첫 단어 or 마지막 단어일 때만 무성음 제거 적용
+        if i == 0 or i == len(chunks) - 1:
+            rms = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
+            non_silent_frames = np.where(rms > silence_threshold)[0]
+
+            if len(non_silent_frames) > 0:
+                first_voice_frame = non_silent_frames[0]
+                start_offset = first_voice_frame * hop_length
+                segment = segment[start_offset:]
+                start_time += start_offset / sr
+
                 rms = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
                 non_silent_frames = np.where(rms > silence_threshold)[0]
 
                 if len(non_silent_frames) > 0:
-                    first_voice_frame = non_silent_frames[0]
-                    start_offset = first_voice_frame * hop_length
-                    segment = segment[start_offset:]
-                    start_time += start_offset / sr
-
-                    rms = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
-                    non_silent_frames = np.where(rms > silence_threshold)[0]
-
-                    if len(non_silent_frames) > 0:
-                        last_voice_frame = non_silent_frames[-1]
-                        end_offset = (last_voice_frame + 1) * hop_length
-                        segment = segment[:end_offset]
-                        end_time = start_time + len(segment) / sr
-                    else:
-                        continue
+                    last_voice_frame = non_silent_frames[-1]
+                    end_offset = (last_voice_frame + 1) * hop_length
+                    segment = segment[:end_offset]
+                    end_time = start_time + len(segment) / sr
                 else:
                     continue
-
-                duration = end_time - start_time
-                chunk['timestamp'] = (start_time, end_time)
             else:
-                # 중간 단어
-                if i + 1 < len(chunks) and chunks[i + 1].get('timestamp'):
-                    next_start_time, _ = chunks[i + 1]['timestamp']
-                    if next_start_time > start_time:
-                        duration = next_start_time - start_time
-                        chunk['timestamp'] = (start_time, next_start_time)
-                    else:
-                        duration = end_time - start_time
-                        chunk['timestamp'] = (start_time, end_time)
+                continue
+
+            duration = end_time - start_time
+            chunk['timestamp'] = (start_time, end_time)
+        else:
+            # 중간 단어
+            if i + 1 < len(chunks) and chunks[i + 1].get('timestamp'):
+                next_start_time, _ = chunks[i + 1]['timestamp']
+                if next_start_time > start_time:
+                    duration = next_start_time - start_time
+                    chunk['timestamp'] = (start_time, next_start_time)
                 else:
                     duration = end_time - start_time
                     chunk['timestamp'] = (start_time, end_time)
+            else:
+                duration = end_time - start_time
+                chunk['timestamp'] = (start_time, end_time)
 
-            # duration 검증
-            if duration < min_duration or duration > max_duration:
-                continue
+        # duration 검증
+        if duration < min_duration or duration > max_duration:
+            continue
 
-            durations.append(duration)
-            valid_chunks.append(chunk)
+        durations.append(duration)
+        valid_chunks.append(chunk)
 
-        logger.info(f"Duration 계산 완료: {len(durations)}개 값")
-        return valid_chunks, durations
-    except Exception as e:
-        logger.error(f"Duration 계산 실패: {e}")
-        return [], []
+    logger.info(f"Duration 계산 완료: {len(durations)}개 값")
+    return valid_chunks, durations
 
 # 상대 duration 계산
 def get_relative_durations(durations):
-    try:
-        total = sum(durations)
-        return [d / total for d in durations] if total > 0 else [0 for _ in durations]
-    except Exception as e:
-        logger.error(f"상대 duration 계산 실패: {e}")
-        return [0 for _ in durations]
+    total = sum(durations)
+    return [d / total for d in durations] if total > 0 else [0 for _ in durations]
 
 # 강세 비교 분석
 def compare_stress(words_ref, intensities_ref, words_usr, intensities_usr):
-    try:
-        logger.info("강세 분석 시작")
-        if not intensities_ref or not intensities_usr:
-            return [], [], 0, [], ["음성 데이터가 부족합니다."]
-            
-        ref_z = zscore(intensities_ref) if len(intensities_ref) > 1 else np.zeros_like(intensities_ref)
-        usr_z = zscore(intensities_usr) if len(intensities_usr) > 1 else np.zeros_like(intensities_usr)
+    logger.info("강세 분석 시작")
+    if not intensities_ref or not intensities_usr:
+        return [], [], 0, [], ["음성 데이터가 부족합니다."]
+        
+    ref_z = zscore(intensities_ref) if len(intensities_ref) > 1 else np.zeros_like(intensities_ref)
+    usr_z = zscore(intensities_usr) if len(intensities_usr) > 1 else np.zeros_like(intensities_usr)
 
-        feedbacks = []
-        highlights = []
-        total_score = 0
-        count = min(len(ref_z), len(usr_z))
+    feedbacks = []
+    highlights = []
+    total_score = 0
+    count = min(len(ref_z), len(usr_z))
 
-        for i in range(count):
-            diff = usr_z[i] - ref_z[i]
-            score = max(0.0, 1.0 - abs(diff) / 2.0)
-            total_score += score
+    for i in range(count):
+        diff = usr_z[i] - ref_z[i]
+        score = max(0.0, 1.0 - abs(diff) / 2.0)
+        total_score += score
 
-            if diff > 1.0:
-                feedbacks.append(f"'{words_usr[i]}' 단어에 불필요한 강조가 있습니다.")
-                highlights.append(True)
-            elif diff < -1.0:
-                feedbacks.append(f"'{words_usr[i]}' 단어가 약하게 발음되었습니다.")
-                highlights.append(True)
-            else:
-                highlights.append(False)
+        if diff > 1.0:
+            feedbacks.append(f"'{words_usr[i]}' 단어에 불필요한 강조가 있습니다.")
+            highlights.append(True)
+        elif diff < -1.0:
+            feedbacks.append(f"'{words_usr[i]}' 단어가 약하게 발음되었습니다.")
+            highlights.append(True)
+        else:
+            highlights.append(False)
 
-        avg_score = int(round((total_score / count) * 100)) if count else 0
+    avg_score = int(round((total_score / count) * 100)) if count else 0
 
-        if avg_score >= 85 and not feedbacks:
-            feedbacks.append("전반적으로 강세를 매우 잘 따라했습니다!")
-        elif avg_score >= 75 and not feedbacks:
-            feedbacks.append("강세 전달이 자연스럽고 좋습니다!")
+    if avg_score >= 85 and not feedbacks:
+        feedbacks.append("전반적으로 강세를 매우 잘 따라했습니다!")
+    elif avg_score >= 75 and not feedbacks:
+        feedbacks.append("강세 전달이 자연스럽고 좋습니다!")
 
-        logger.info(f"강세 분석 완료: 점수 {avg_score}")
-        return usr_z.tolist(), ref_z.tolist(), avg_score, highlights, feedbacks
-    except Exception as e:
-        logger.error(f"강세 분석 실패: {e}")
-        return [], [], 0, [], ["강세 분석 중 오류가 발생했습니다."]
+    logger.info(f"강세 분석 완료: 점수 {avg_score}")
+    return usr_z.tolist(), ref_z.tolist(), avg_score, highlights, feedbacks
 
 # DTW를 사용한 duration 분석(fastdtw로 수정)
 def analyze_duration_with_dtw(user_chunks, ref_chunks, user_durations, ref_durations):
-    try:
-        logger.info("Duration DTW 분석 시작")
+    logger.info("Duration DTW 분석 시작")
 
-        # 길이 확인
-        if len(user_durations) == 0 or len(ref_durations) == 0:
-            return ["음성 데이터가 부족합니다."], 0, []
+    # 길이 확인
+    if len(user_durations) == 0 or len(ref_durations) == 0:
+        return ["음성 데이터가 부족합니다."], 0, []
 
-        # 상대 duration 계산
-        user_rel = np.array(get_relative_durations(user_durations))[:, np.newaxis]
-        ref_rel = np.array(get_relative_durations(ref_durations))[:, np.newaxis]
+    # 상대 duration 계산
+    user_rel = np.array(get_relative_durations(user_durations))[:, np.newaxis]
+    ref_rel = np.array(get_relative_durations(ref_durations))[:, np.newaxis]
 
-        # 길이가 너무 짧으면 DTW 불가
-        if len(user_rel) < 2 or len(ref_rel) < 2:
-            return ["Duration 시퀀스 길이가 너무 짧아 DTW 분석이 어렵습니다."], 0, []
+    # 길이가 너무 짧으면 DTW 불가
+    if len(user_rel) < 2 or len(ref_rel) < 2:
+        return ["Duration 시퀀스 길이가 너무 짧아 DTW 분석이 어렵습니다."], 0, []
 
-        # fastdtw 실행 (리턴값: distance, path)
-        distance, path = fastdtw(user_rel, ref_rel, dist=euclidean)
-        x_indices, y_indices = zip(*path)
+    # fastdtw 실행 (리턴값: distance, path)
+    distance, path = fastdtw(user_rel, ref_rel, dist=euclidean)
+    x_indices, y_indices = zip(*path)
 
-        # MAE 계산
-        abs_diffs = [abs(user_rel[i][0] - ref_rel[j][0]) for i, j in zip(x_indices, y_indices)]
-        mae = np.mean(abs_diffs)
-        similarity_score = round(max(0, 100 * (1 - mae)))
+    # MAE 계산
+    abs_diffs = [abs(user_rel[i][0] - ref_rel[j][0]) for i, j in zip(x_indices, y_indices)]
+    mae = np.mean(abs_diffs)
+    similarity_score = round(max(0, 100 * (1 - mae)))
 
-        # 피드백 생성
-        feedback_sentences = []
-        highlights = []
+    # 피드백 생성
+    feedback_sentences = []
+    highlights = []
 
-        for idx, (i, j) in enumerate(zip(x_indices, y_indices)):
-            if i >= len(user_chunks):
-                break
+    for idx, (i, j) in enumerate(zip(x_indices, y_indices)):
+        if i >= len(user_chunks):
+            break
 
-            u = user_rel[i][0]
-            r = ref_rel[j][0]
-            word = user_chunks[i].get('text', '')
-            diff = u - r
+        u = user_rel[i][0]
+        r = ref_rel[j][0]
+        word = user_chunks[i].get('text', '')
+        diff = u - r
 
-            highlights.append(abs(diff) > 0.1)
+        highlights.append(abs(diff) > 0.1)
 
-            if diff > 0.1:
-                feedback_sentences.append(f"'{word}' 단어를 상대적으로 길게 발음했습니다.")
-            elif diff < -0.1:
-                feedback_sentences.append(f"'{word}' 단어를 상대적으로 짧게 발음했습니다.")
+        if diff > 0.1:
+            feedback_sentences.append(f"'{word}' 단어를 상대적으로 길게 발음했습니다.")
+        elif diff < -0.1:
+            feedback_sentences.append(f"'{word}' 단어를 상대적으로 짧게 발음했습니다.")
 
-        if not feedback_sentences:
-            feedback_sentences.append("모든 단어의 발화 길이가 적절했습니다.")
+    if not feedback_sentences:
+        feedback_sentences.append("모든 단어의 발화 길이가 적절했습니다.")
 
-        logger.info(f"Duration DTW 분석 완료: 점수 {similarity_score}")
-        return feedback_sentences, similarity_score, highlights
-
-    except Exception as e:
-        logger.error(f"Duration DTW 분석 실패: {e}")
-        traceback.print_exc()
-        return ["Duration 분석 중 오류가 발생했습니다."], 0, []
+    logger.info(f"Duration DTW 분석 완료: 점수 {similarity_score}")
+    return feedback_sentences, similarity_score, highlights
 
 # 시각화
 def result_visualize(pitch_data, labels, output_dir="pitch_result"):
@@ -461,7 +426,7 @@ def run_integrated_analysis(user_audio, ref_audio):
         logger.info(f"=== 통합 분석 시작 ===")
         logger.info(f"User: {user_audio}, Ref: {ref_audio}")
         
-        # 1. 노이즈 제거
+        # 노이즈 제거
         logger.info("1. 노이즈 제거 시작")
         user_denoised = spectral_subtraction(user_audio, "user_denoised.wav")
         ref_denoised = spectral_subtraction(ref_audio, "ref_denoised.wav")
@@ -470,7 +435,7 @@ def run_integrated_analysis(user_audio, ref_audio):
             logger.error("노이즈 제거 실패")
             return {"error": "노이즈 제거 실패"}
 
-        # 2. 음성 인식
+        # 음성 인식
         logger.info("2. 음성 인식 시작")
         user_result = transcribe_with_whisper(user_denoised)
         ref_result = transcribe_with_whisper(ref_denoised)
@@ -482,7 +447,7 @@ def run_integrated_analysis(user_audio, ref_audio):
         user_chunks = sorted(user_result['chunks'], key=lambda x: x['timestamp'][0] if x.get('timestamp') else float('inf'))
         ref_chunks = sorted(ref_result['chunks'], key=lambda x: x['timestamp'][0] if x.get('timestamp') else float('inf'))
 
-        # 3. 음소 추출 및 pitch 분석
+        # 음소 추출 및 pitch 분석
         logger.info("3. 음소 추출 및 pitch 분석 시작")
         user_phonemes = extract_phonemes_from_chunks(user_chunks)
         ref_phonemes = extract_phonemes_from_chunks(ref_chunks)
@@ -504,7 +469,7 @@ def run_integrated_analysis(user_audio, ref_audio):
         else:
             pitch_score = 0
 
-        # 4. Intensity 분석
+        # Intensity 분석
         logger.info("4. Intensity 분석 시작")
         words_usr, intensities_usr = get_intensity_per_chunk(user_denoised, user_chunks)
         words_ref, intensities_ref = get_intensity_per_chunk(ref_denoised, ref_chunks)
@@ -513,7 +478,7 @@ def run_integrated_analysis(user_audio, ref_audio):
             words_ref, intensities_ref, words_usr, intensities_usr
         )
 
-        # 5. Duration 분석
+        # Duration 분석
         logger.info("5. Duration 분석 시작")
         user_chunks_filtered, user_durations = get_duration_per_chunk(user_chunks, user_denoised)
         ref_chunks_filtered, ref_durations = get_duration_per_chunk(ref_chunks, ref_denoised)
@@ -522,7 +487,7 @@ def run_integrated_analysis(user_audio, ref_audio):
             user_chunks_filtered, ref_chunks_filtered, user_durations, ref_durations
         )
 
-        # 6. 안전한 결과 생성
+        # 안전한 결과 생성
         logger.info("6. 결과 생성 시작")
         def safe_convert(value, default=None):
             try:
@@ -571,15 +536,3 @@ def run_integrated_analysis(user_audio, ref_audio):
         logger.error(f"통합 분석 중 예상치 못한 에러: {e}")
         traceback.print_exc()
         return {"error": f"분석 실패: {str(e)}"}
-
-# 디버깅용
-# def run_integrated_analysis_test(user_audio, ref_audio):
-#     logger.info("테스트 함수 호출됨")
-#     return {
-#         "pitch": {"user": [1.0, 2.0], "native": [1.1, 2.1], "score": 85},
-#         "intensity": {"user": [0.5], "native": [0.6], "score": 90, "highlight": [True], "feedback": ["Good"]},
-#         "duration": {"user": [1.2], "native": [1.3], "score": 88, "highlight": [False], "feedback": ["OK"]}
-#     }
-
-result = run_integrated_analysis("user_summer.wav", "summer.wav")
-print(result)
