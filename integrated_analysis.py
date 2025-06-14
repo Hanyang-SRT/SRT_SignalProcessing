@@ -1,4 +1,4 @@
- from transformers import pipeline
+from transformers import pipeline
 import librosa
 import numpy as np
 import soundfile as sf
@@ -15,6 +15,15 @@ import logging
 import traceback
 import torch
 import os
+import io
+import base64
+
+if False:
+    ORIGIN = "0.0.0.0"
+    PORT = 8000
+else:
+    ORIGIN = "https://areum817-speech-recognition.hf.space"
+    PORT = 80
 
 # MPS 문제 방지
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
@@ -56,18 +65,19 @@ def spectral_subtraction(audio_file, output_file, alpha=2.0, beta=0.05):
     logger.info(f"노이즈 제거 완료: {output_file}")
     return output_file
 
+
+whisper_pipe = pipeline(
+    "automatic-speech-recognition",
+    model="openai/whisper-small",
+    return_timestamps="word",
+    device=0 if torch.cuda.is_available() else -1
+)
+
 # Whisper로 텍스트 및 타임스탬프 추출
 def transcribe_with_whisper(audio_file):
     # try:
     logger.info(f"Whisper 전사 시작: {audio_file}")
-    pipe = pipeline(
-        "automatic-speech-recognition", 
-        model="openai/whisper-small", 
-        return_timestamps="word",
-        device="cpu" ,  # 명시적으로 CPU 사용
-        torch_dtype=torch.float32
-    )
-    result = pipe(audio_file)
+    result = whisper_pipe(audio_file)
 
     if not result or 'chunks' not in result:
         logger.error("Whisper 결과가 비어있거나 chunks가 없음")
@@ -207,8 +217,6 @@ def get_intensity_per_chunk(audio_file, chunks):
     words = []
     
     for chunk in chunks:
-        # if not chunk.get('timestamp') or not chunk.get('text'):
-        #     continue
             
         start_time, end_time = chunk['timestamp']
         if start_time is None or end_time is None:
@@ -392,12 +400,21 @@ def analyze_duration_with_dtw(user_chunks, ref_chunks, user_durations, ref_durat
     return feedback_sentences, similarity_score, highlights
 
 # 시각화
-def result_visualize(pitch_data, labels, output_dir="pitch_result"):
+def result_visualize(pitch_data, labels, output_dir="media", base64_bool=False):
     os.makedirs(output_dir, exist_ok=True)
 
     def align_data_lengths(data1, data2, label_data):
         min_len = min(len(data1), len(data2), len(label_data))
         return data1[:min_len], data2[:min_len], label_data[:min_len]
+
+    try:
+        font_path = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
+        font_prop = FontProperties(fname=font_path)
+        
+    except Exception as e:
+        logger.warning(f"폰트 설정 실패: {e}")
+        font_prop = None
+
 
     # Pitch Plot (음소 단위)
     if pitch_data['user'] and pitch_data['native'] and labels:
@@ -411,17 +428,32 @@ def result_visualize(pitch_data, labels, output_dir="pitch_result"):
         plt.plot(x, user_pitch, label="User", color="indigo", linewidth=2)
         plt.scatter(x, native_pitch, color='skyblue', edgecolors='skyblue', zorder=5)
         plt.scatter(x, user_pitch, color='indigo', edgecolors='indigo', zorder=5)
-        plt.xticks(x, pitch_labels, fontproperties=FontProperties(family='AppleGothic'))
+        plt.xticks(x, pitch_labels, fontproperties=font_prop)
         plt.yticks(color='white')
         plt.title("Pitch Analysis", fontweight='bold')
         plt.legend()
         plt.grid(alpha=0.3)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, "pitch.png"), dpi=150, bbox_inches='tight')
-        plt.close(fig)
+        if base64_bool:
+            print("Base64 인코딩을 위한 이미지 저장")
+            # 메모리 버퍼에 이미지 저장
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            buf.seek(0)
+            # Base64 인코딩
+            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            return img_base64
+        else:
+            plt.savefig(os.path.join(output_dir, "pitch.png"), dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            return f"{ORIGIN}:{PORT}/{os.path.join(output_dir, 'pitch.png')}"
+            
 
 # 통합 분석 실행 함수
 def run_integrated_analysis(user_audio, ref_audio):
+    base64_bool = True
+    
     try:
         logger.info(f"=== 통합 분석 시작 ===")
         logger.info(f"User: {user_audio}, Ref: {ref_audio}")
@@ -498,13 +530,14 @@ def run_integrated_analysis(user_audio, ref_audio):
                 return default
 
         # pitch 시각화 추가
-        result_visualize(
+        img = result_visualize(
             pitch_data={
                 "user": user_pitch_aligned,
                 "native": ref_pitch_aligned
             },
             labels=aligned_labels,
-            output_dir="pitch_result"
+            output_dir="media",
+            base64_bool=base64_bool
         )
 
         result = {
@@ -526,13 +559,11 @@ def run_integrated_analysis(user_audio, ref_audio):
                 "score": int(safe_convert(duration_score, 0)),
                 "highlight": [bool(h) for h in duration_highlights[:len(user_durations)]] if duration_highlights else [],
                 "feedback": list(duration_feedbacks)
-            }
+            },
+            "image" : img
         }
-
-        logger.info("=== 통합 분석 완료 ===")
         return result
 
     except Exception as e:
-        logger.error(f"통합 분석 중 예상치 못한 에러: {e}")
         traceback.print_exc()
         return {"error": f"분석 실패: {str(e)}"}
