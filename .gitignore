@@ -176,8 +176,9 @@ cython_debug/
 # Large files
 mp4_clip/
 wav_file/
+wav_files/
 denoised_audio/
 .DS_Store
-
+user_wav/
 visualization/
 *.wav
