@@ -17,9 +17,7 @@ import base64
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def is_korean_syllable(char):
-    """한글 음절인지 확인하는 함수"""
-    return '가' <= char <= '힣'
+
 
 def extract_syllables_from_chunks(chunks):
     """Whisper 청크에서 음절 단위로 타임스탬프를 추출하는 함수"""
@@ -190,42 +188,6 @@ def align_syllables_by_sequence(user_syllables, user_pitches, ref_syllables, ref
         logger.error(f"음절 정렬 실패: {e}")
         return [], [], []
 
-def calculate_pitch_similarity_score(user_pitches, ref_pitches):
-    """피치 유사도 점수를 계산하는 함수"""
-    try:
-        valid_pairs = []
-        
-        # 유효한 피치 쌍만 선별
-        for user_p, ref_p in zip(user_pitches, ref_pitches):
-            if not np.isnan(user_p) and not np.isnan(ref_p):
-                valid_pairs.append((user_p, ref_p))
-        
-        if len(valid_pairs) == 0:
-            logger.warning("유사도 계산을 위한 유효한 피치 쌍이 없음")
-            return 0
-        
-        # 세미톤 차이 계산
-        differences = [abs(user_p - ref_p) for user_p, ref_p in valid_pairs]
-        avg_difference = np.mean(differences)
-        
-        # 점수 변환 로직
-        if avg_difference <= 0.5:
-            score = 100 - avg_difference * 20  # 100점에서 90점까지
-        elif avg_difference <= 1.0:
-            score = 90 - (avg_difference - 0.5) * 30  # 90점에서 75점까지
-        elif avg_difference <= 2.0:
-            score = 75 - (avg_difference - 1.0) * 25  # 75점에서 50점까지
-        elif avg_difference <= 3.0:
-            score = 50 - (avg_difference - 2.0) * 25  # 50점에서 25점까지
-        else:
-            score = max(0, 25 - (avg_difference - 3.0) * 8)  # 25점에서 0점까지
-        
-        logger.info(f"피치 유사도 계산 완료 - 평균 차이: {avg_difference:.2f} 세미톤, 점수: {score:.1f}")
-        return max(0, min(100, score))  # 0-100 범위로 제한
-        
-    except Exception as e:
-        logger.error(f"유사도 점수 계산 실패: {e}")
-        return 0
 
 def interpolate_pitch(pitches):
     try:
@@ -392,7 +354,12 @@ def run_pitch_analysis(user_denoised_path, ref_denoised_path, user_chunks, ref_c
         
         # 유사도 점수 계산
         logger.info("6. 유사도 점수 계산 시작")
-        pitch_score = calculate_pitch_similarity_score(user_interpolated, ref_interpolated)
+        if len(user_interpolated) > 0 and len(ref_interpolated) > 0:
+            pitch_diff = np.array(user_interpolated) - np.array(ref_interpolated)
+            pitch_score = max(0, int(100 - np.nanmean(np.abs(pitch_diff)) / 10))
+        else:
+            pitch_score = 0
+        
 
         # 결과 시각화
         logger.info("7. 결과 시각화 시작")
@@ -403,13 +370,13 @@ def run_pitch_analysis(user_denoised_path, ref_denoised_path, user_chunks, ref_c
             },
             labels=aligned_labels,             
             output_dir="visualization",
+            base64_bool=True
         )
         
         result = {
             "pitch": {
                 "user": [round(safe_convert(p, 0), 2) for p in user_interpolated],
                 "native": [round(safe_convert(p, 0), 2) for p in ref_interpolated],
-                "labels": aligned_labels,
                 "score": int(safe_convert(pitch_score, 0))
             },
             "image": img

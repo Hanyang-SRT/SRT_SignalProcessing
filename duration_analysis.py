@@ -1,19 +1,11 @@
-from transformers import pipeline
 import librosa
 import numpy as np
-import soundfile as sf
-from scipy.stats import zscore
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import re
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 import logging
 import traceback
 import torch
 import os
-import io
-import base64
 
 # MPS 문제 방지
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
