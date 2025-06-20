@@ -75,7 +75,23 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
 ### Duration Anaylsis
 
 ```bash
-{'pitch': {'user': [-9.93, -9.73, -9.43, 11.42, 10.77, 7.87, 6.07, -9.83], 'native': [-0.25, 5.55, 6.65, 4.55, -1.99, -4.45, 0.25, -0.35], 'labels': ['고', '생', '하', '셨', '습', '니', '다', '.'], 'score': 47}, 'image': '/Users/leenayoung/Desktop/SRT/SRT_SignalProcessing/meida/pitch.png', 'intensity': {'user': [0.0], 'native': [0.0], 'score': 100, 'highlight': [False], 'feedback': ['전반적으로 강세를 매우 잘 따라했습니다!']}, 'duration': {'user': [1.58], 'native': [0.8], 'score': 100, 'highlight': [False], 'feedback': ['모든 단어의 발화 길이가 적절했습니다.']}}
+{
+  'pitch': 
+        {'user': [-9.93, -9.73, -9.43, 11.42, 10.77, 7.87, 6.07, -9.83], 
+        'native': [-0.25, 5.55, 6.65, 4.55, -1.99, -4.45, 0.25, -0.35], 
+        'labels': ['고', '생', '하', '셨', '습', '니', '다', '.'], 'score': 47}, 
+  'image': '/Users/leenayoung/Desktop/SRT/SRT_SignalProcessing/meida/pitch.png', 
+  'intensity': 
+        {'user': [0.0], 
+        'native': [0.0], 'score': 100, 'highlight': [False], 
+        'feedback': ['전반적으로 강세를 매우 잘 따라했습니다!']}, 
+  'duration': 
+        {'user': [1.58], 
+          'native': [0.8], 
+          'score': 100, 
+          'highlight': [False],
+          'feedback': ['모든 단어의 발화 길이가 적절했습니다.']}
+}
 ```
 최종적으로 분석된 사용자의 음성은 다음과 같이 json 형식으로 반환되며, 각 분석 결과별로 사용자 음성, 원어민 음성, 평가 결과, 피드백 메세지를 포함하여 웹 서버로 전달된다. 이 데이터는 프론트엔드에서 실시간 시각화 및 학습자 피드백 제공에 활용된다.
 
