@@ -1,14 +1,10 @@
-import re
 import numpy as np
 import librosa
-import soundfile as sf
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 from matplotlib.font_manager import FontProperties
 import logging
 import traceback
-import torch
 import os
 import io
 import base64
@@ -17,9 +13,6 @@ import base64
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def is_korean_syllable(char):
-    """한글 음절인지 확인하는 함수"""
-    return '가' <= char <= '힣'
 
 def extract_syllables_from_chunks(chunks):
     """Whisper 청크에서 음절 단위로 타임스탬프를 추출하는 함수"""
@@ -40,7 +33,6 @@ def extract_syllables_from_chunks(chunks):
                 continue
             
             # 각 글자에 균등하게 시간 할당
-            # 이는 완벽하지 않지만 실용적인 근사치를 제공합니다
             syllable_duration = duration / len(word_syllables)
             
             for i, syllable in enumerate(word_syllables):
@@ -259,9 +251,6 @@ def result_visualize_syllable(pitch_data, labels, output_dir="media", base64_boo
             logger.error("정렬된 데이터가 비어있음")
             return None
 
-        # matplotlib 설정 - 한글 폰트 처리
-        plt.rcParams['font.family'] = ['DejaVu Sans', 'Liberation Sans', 'sans-serif']
-        plt.rcParams['axes.unicode_minus'] = False
 
         # 그래프 생성
         fig = plt.figure(figsize=(15, 6), facecolor="#A49CC7")
@@ -275,17 +264,14 @@ def result_visualize_syllable(pitch_data, labels, output_dir="media", base64_boo
         
         # x축 라벨 설정 - 한글 처리
         try:
-            # plt.xticks(x, display_labels, fontsize=10, rotation=0)
             plt.xticks(x, display_labels, fontproperties=FontProperties(family='AppleGothic'))
         except Exception as e:
             logger.warning(f"x축 라벨 설정 실패, 인덱스 사용: {e}")
-            # plt.xticks(x, [str(i) for i in range(len(display_labels))], fontsize=10)
             plt.xticks(x, [str(i) for i in range(len(display_labels))], fontproperties=FontProperties(family='AppleGothic'))
             
         # 그래프 스타일링
         plt.yticks(color='white')
         plt.title("Pitch Analysis", fontweight='bold', color='white', fontsize=14)
-        # plt.xlabel("Syllables", color='white', fontsize=12)
         plt.ylabel("Pitch", fontweight='bold', color='white', fontsize=12)
         plt.legend(loc='upper right')
         plt.grid(alpha=0.3, color='white')
