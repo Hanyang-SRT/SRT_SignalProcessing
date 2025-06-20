@@ -181,4 +181,5 @@ denoised_audio/
 .DS_Store
 user_wav/
 visualization/
+media/
 *.wav

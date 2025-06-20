@@ -2,12 +2,23 @@ from transformers import pipeline
 import librosa
 import numpy as np
 import soundfile as sf
+from scipy.stats import zscore
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import re
+from fastdtw import fastdtw
+from scipy.interpolate import interp1d
+from scipy.spatial.distance import euclidean
+from matplotlib.font_manager import FontProperties
 from pitch_analysis import run_pitch_analysis
 from intensity_analysis import run_intensity_analysis
 from duration_analysis import run_duration_analysis
+from g2pk import G2p
 import logging
+import traceback
 import torch
 import os
+import io
 import base64
 
 if False:
@@ -83,6 +94,7 @@ def transcribe_with_whisper(audio_file):
 
 # 통합 분석 실행 함수
 def run_integrated_analysis(user_audio, ref_audio):
+    base64_bool = False
     
     logger.info(f"=== 통합 분석 시작 ===")
     logger.info(f"User: {user_audio}, Ref: {ref_audio}")
@@ -111,7 +123,5 @@ def run_integrated_analysis(user_audio, ref_audio):
     integrated_result.update(pitch_result)
     integrated_result.update(intensity_result)
     integrated_result.update(duration_result)
-    integrated_result['user_text'] = user_result['text'] if 'text' in user_result else ""
     
     return integrated_result
-

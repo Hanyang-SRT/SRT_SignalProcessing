@@ -17,7 +17,9 @@ import base64
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
+def is_korean_syllable(char):
+    """한글 음절인지 확인하는 함수"""
+    return '가' <= char <= '힣'
 
 def extract_syllables_from_chunks(chunks):
     """Whisper 청크에서 음절 단위로 타임스탬프를 추출하는 함수"""
@@ -188,6 +190,23 @@ def align_syllables_by_sequence(user_syllables, user_pitches, ref_syllables, ref
         logger.error(f"음절 정렬 실패: {e}")
         return [], [], []
 
+def calculate_pitch_score(user_pitch, ref_pitch, threshold=3.0):
+    diffs = np.abs(np.array(user_pitch) - np.array(ref_pitch))
+    
+    score = 100
+    for d in diffs:
+        if np.isnan(d):  # pitch 추출 실패한 경우는 감점 안함
+            continue
+        if d <= threshold:
+            continue
+        elif d <= threshold + 1:
+            score -= 2  # 살짝 큰 오차
+        elif d <= threshold + 3:
+            score -= 4  # 중간 오차
+        else:
+            score -= 7  # 심한 오차
+    
+    return max(0, int(score))
 
 def interpolate_pitch(pitches):
     try:
@@ -215,7 +234,7 @@ def safe_convert(value, default):
     except (TypeError, ValueError):
         return default
 
-def result_visualize_syllable(pitch_data, labels, output_dir="visualization", base64_bool=False):
+def result_visualize_syllable(pitch_data, labels, output_dir="media", base64_bool=False):
     """음절 기반 피치 시각화 함수"""
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -354,12 +373,7 @@ def run_pitch_analysis(user_denoised_path, ref_denoised_path, user_chunks, ref_c
         
         # 유사도 점수 계산
         logger.info("6. 유사도 점수 계산 시작")
-        if len(user_interpolated) > 0 and len(ref_interpolated) > 0:
-            pitch_diff = np.array(user_interpolated) - np.array(ref_interpolated)
-            pitch_score = max(0, int(100 - np.nanmean(np.abs(pitch_diff)) / 10))
-        else:
-            pitch_score = 0
-        
+        pitch_score = calculate_pitch_score(user_interpolated, ref_interpolated)
 
         # 결과 시각화
         logger.info("7. 결과 시각화 시작")
@@ -369,14 +383,14 @@ def run_pitch_analysis(user_denoised_path, ref_denoised_path, user_chunks, ref_c
                 "native": ref_interpolated    
             },
             labels=aligned_labels,             
-            output_dir="visualization",
-            base64_bool=True
+            output_dir="meida",
         )
         
         result = {
             "pitch": {
                 "user": [round(safe_convert(p, 0), 2) for p in user_interpolated],
                 "native": [round(safe_convert(p, 0), 2) for p in ref_interpolated],
+                "labels": aligned_labels,
                 "score": int(safe_convert(pitch_score, 0))
             },
             "image": img
