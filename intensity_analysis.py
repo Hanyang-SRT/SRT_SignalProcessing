@@ -1,18 +1,11 @@
-from transformers import pipeline
 import librosa
 import numpy as np
-import soundfile as sf
 from scipy.stats import zscore
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import re
-from g2pk import G2p
 import logging
 import traceback
 import torch
 import os
-import io
-import base64
+
 
 # MPS 문제 방지
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
@@ -63,7 +56,7 @@ def compare_intensity(words_ref, intensities_ref, words_usr, intensities_usr):
 
     for i in range(count):
         diff = usr_z[i] - ref_z[i]
-        score = max(0.0, 1.0 - abs(diff) / 2.0)
+        score = max(0.0, 1.0 - abs(diff) / 3.0)
         total_score += score
 
         if diff > 1.0:
