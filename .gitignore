@@ -174,6 +174,11 @@ cython_debug/
 .pypirc
 
 # Large files
-mp4_file/
+mp4_clip/
 wav_file/
+wav_files/
 denoised_audio/
+.DS_Store
+user_wav/
+visualization/
+*.wav
