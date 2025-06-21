@@ -70,7 +70,7 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
 - **결과 시각화**: 음절별 pitch 곡선(사용자 vs 원어민)을 그래프로 표시
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/4d52469b-c6d7-4941-aa05-ffa6f9536096" width="70%">
+  <img src="https://github.com/user-attachments/assets/d4ad3781-8fdb-4231-ad65-5e6171641572" width="70%">
   <br>
   [그림 2] Pitch 분석 시각화 예시
 </div>
