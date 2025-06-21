@@ -6,7 +6,7 @@
 - [Project Structure](#project-structure)
 - [Development Environment](#development-environment)
 - [Libraries and Tools](#libraries-and-tools)
-- [Features](#features)
+- [Features](#세부-내용)
 - [Role Contribution](#role-contribution)
   
 ## Overview
@@ -49,7 +49,8 @@ SRT_SignalProcessing
 pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==2.6.0 transformers==4.51.3 fastapi==0.115.12 fastdtw==0.3.4 matplotlib==3.10.1 uvicorn python-multipart yt-dlp
 ```
 
-## Features
+## 세부 내용
+
 모든 운율을 분석하는 데에 있어서 음성인식 모델로는 openai의 whisper를 사용하였으며, 사용자의 음성은 spectral subtraction을 통해 노이즈 전처리 과정을 거친 후 운율을 분석한다. 다음은 운율을 분석하는 과정을 나타낸 플로우 차트이다. 
 <div align="center">
   <img src="https://github.com/user-attachments/assets/f86b0ddb-0f60-470b-9166-10798f0de3f2" width="70%">
@@ -57,43 +58,78 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
   [그림 1] 운율 분석 처리 과정
 </div>
 
-### Pitch Analysis 
-일반적인 음성 인식 시스템은 단어 단위로 음성을 분석하지만, 한국어는 음절 단위로 억양과 성조의 변화가 있기 때문에 각 음절별로 pitch를 분석하였다. 이를 위해 먼저 whisper를 통해 제공받은 단어 단위 timestamp를 글자별로 분해한다. 이후 전체 단어 지속시간을 글자 수로 나누어 각 음절별로 pitch를 추출한 후, 음절을 구성하는 여러 음소들의 pitch값 중 중앙값을 해당 음절의 대표적인 pitch값으로 사용하였다. 이 과정에서 PYIN 알고리즘을 활용하여 사용자의 기본 주파수를 고려한 pitch를 추출하고자 하였다. PYIN 알고리즘은 성인 남성의 가장 낮은 음성부터 여성의 가장 높은 음성까지 모두 포괄하는 범위이기 때문에, 사람의 음성에서 기본 주파수를 찾는 데에 매우 효과적이다. 추출한 pitch값은 세미톤 단위로 정규화되어 각 화자별로 기준점을 설정하였다. 이 과정을 통해 사용자마다 다른 기본 주파수를 반영하여 절대적인 주파수값을 두 발화자의 상대적인 주파수 차이로 시각화하고자 하였다.
+### Pitch 분석
 
-무성음 음소가 포함된 음절은 성대의 진동이 없이 나는 소리이기 때문에 pitch값을 절대적으로 추출하기 어렵다. 이 부분은 해당 음절의 앞뒤 음절을 활용하여 선형 보간을 통해 자연스럽게 이어지도록 하여 최종적으로 사용자와 원어민의 pitch를 비교하여 시각화할 때 보다 더 효율적으로 비교분석할 수 있도록 하였다. 
-전체 점수는 100점에서 시작하여 세미톤 차이에 따라 단계별로 점수를 차감하였다. 3세미톤 이하의 차이는 자연스러운 개인차 범위로 보고 감점하지 않으며, 3-4세미톤은 2점, 4-6세미톤은 4점, 6세미톤 이상은 7점을 차감하는 단계별 채점 시스템을 적용하였다. 상대적인 pitch값의 유사도 차이에 따라 점수를 차감하여 직관적인 수치로 사용자의 현재 상태를 시각화하고자 하였다.
+- **음절 단위 Pitch 분석**: 한국어 억양 특성을 반영해, 단어를 음절로 분해 후 각 음절별 pitch 계산
+- **기법**: PYIN 알고리즘으로 pitch 추출 → 중간값을 대표 pitch로 사용
+- **보정**: 무성음 음절은 선형 보간(interpolation)으로 자연스럽게 연결
+- **채점 방식**:
+  - 기준: 100점 만점
+  - 3세미톤 이내: 감점 없음
+  - 3–4 세미톤: –2점, 4–6: –4점, 6↑: –7점 감점
+- **결과 시각화**: 음절별 pitch 곡선(사용자 vs 원어민)을 그래프로 표시
 
-최종적으로 분석 결과를 시각화하여 음절을 가로축, 정규화된 pitch값을 세로축으로 하여 사용자와 원어민의 pitch 곡선을 함께 표시하여 사용자가 자신의 상태에 대해 효율적으로 파악할 수 있도록 하였다. 아래 사진은 시각화된 그래프의 예시이다.
 <div align="center">
   <img src="https://github.com/user-attachments/assets/4d52469b-c6d7-4941-aa05-ffa6f9536096" width="70%">
   <br>
-  [그림 2] pith 분석 시각화 결과
+  [그림 2] Pitch 분석 시각화 예시
+</div>
+<br>
 </div>
 시각화된 분석 결과는 base64로 인코딩되어 웹에서 바로 표시할 수 있도록 처리하였다.
 
-### Intensity Analysis
-### Duration Anaylsis
+### Intensity 분석
+
+- **단어 단위 강세 분석**: Whisper의 단어별 timestamp로 각 구간을 분할하고 RMS 에너지 계산
+- **기법**: Librosa를 사용하여 각 단어 구간의 평균 에너지를 추출
+- **정규화**: 문장 내 상대적인 강조 정도를 보기 위해 z-score 정규화 적용
+- **채점 기준**:
+  - 각 단어마다 z-score 차이 `diff`에 대해 `1 - |diff| / 3` 방식으로 점수를 계산
+  -  전체 단어 평균 점수를 100점 만점으로 환산
+
+
+
+### Duration 분석
+
+- **단어 발화 길이 분석**: Whisper의 timestamp로 각 단어의 발화 지속시간 계산
+- **기법**: 사용자와 원어민의 각 단어 duration을 계산하여 DTW(Dynamic Time Warping)로 정렬 후 비교
+- **정규화**: 전체 문장 길이를 1로 두고 상대적인 비율로 각 단어의 duration 환산
+- **보정**: 문장의 처음과 마지막 단어에서 무성음으로 인한 공백 구간은 제거하여 실제 발화 구간만 반영
+- **채점 기준**:
+  - fastDTW 결과로 정렬된 사용자-원어민 duration쌍의 차이를 기반으로 MAE(Mean Absolute Error) 계산
+  - 점수 = `max(0, 100 × (1 - MAE))`
+  - MAE가 클수록 감점
+
+#### 최종 결과
+최종적으로 분석된 사용자의 음성은 다음과 같이 json 형식으로 반환되며, 각 분석 결과별로 사용자 음성, 원어민 음성, 평가 결과, 피드백 메세지를 포함하여 웹 서버로 전달된다. 이 데이터는 프론트엔드에서 실시간 시각화 및 학습자 피드백 제공에 활용된다.
 
 ```bash
 {
-  'pitch': 
-        {'user': [-9.93, -9.73, -9.43, 11.42, 10.77, 7.87, 6.07, -9.83], 
-        'native': [-0.25, 5.55, 6.65, 4.55, -1.99, -4.45, 0.25, -0.35], 
-        'labels': ['고', '생', '하', '셨', '습', '니', '다', '.'], 'score': 47}, 
-  'image': '/Users/leenayoung/Desktop/SRT/SRT_SignalProcessing/meida/pitch.png', 
-  'intensity': 
-        {'user': [0.0], 
-        'native': [0.0], 'score': 100, 'highlight': [False], 
-        'feedback': ['전반적으로 강세를 매우 잘 따라했습니다!']}, 
-  'duration': 
-        {'user': [1.58], 
-          'native': [0.8], 
-          'score': 100, 
-          'highlight': [False],
-          'feedback': ['모든 단어의 발화 길이가 적절했습니다.']}
+  {
+  "pitch": {
+    "user": [ -2.25, 1.2, -0.2, 0, -0.1, 0.6, -1.2, 2.9, 2, 2, -2.3],
+    "native": [ -2.15, 1.3 , -0.1, 0.1, 0, -0.15, -1.1, 3, 2.1, 2.1,-2.2],
+    "score": 96
+  },
+  "image": "iVBORw0KGgoAAAANSUhE~~",
+  {
+  'stress': {
+    'user': [-0.85, -0.7, 0.82, 1.56, -0.82], 
+    'native': [0.69, 0.1, -1.75, 1.19, -0.22], 
+    'score': 63, 
+    'highlight': [True, False, True, False, False], 
+    'feedback': ["' 얼른' 단어가 약하게 발음되었습니다.", "' 지금' 단어에 불필요한 강조가 있습니다."]
+  }, 
+  'duration': {
+    'user': [0.21, 0.15, 0.45, 0.56, 0.42], 
+    'native': [0.25, 0.28, 0.64, 0.5, 0.17],
+    'score': 93, 
+    'highlight': [False, False, False, False, True],
+    'feedback': ["' 돼' 단어를 상대적으로 길게 발음했습니다."]
+    },
+  "user_text": " 얼른 가자 지금 출발해야 돼"
 }
 ```
-최종적으로 분석된 사용자의 음성은 다음과 같이 json 형식으로 반환되며, 각 분석 결과별로 사용자 음성, 원어민 음성, 평가 결과, 피드백 메세지를 포함하여 웹 서버로 전달된다. 이 데이터는 프론트엔드에서 실시간 시각화 및 학습자 피드백 제공에 활용된다.
 
 ## Role Contribution 
 | Team Member | Role |
