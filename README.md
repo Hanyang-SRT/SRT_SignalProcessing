@@ -6,7 +6,7 @@
 - [Project Structure](#project-structure)
 - [Development Environment](#development-environment)
 - [Libraries and Tools](#libraries-and-tools)
-- [Features](#세부-내용)
+- [Features](#features)
 - [Role Contribution](#role-contribution)
   
 ## Overview
