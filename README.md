@@ -49,7 +49,7 @@ SRT_SignalProcessing
 pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==2.6.0 transformers==4.51.3 fastapi==0.115.12 fastdtw==0.3.4 matplotlib==3.10.1 uvicorn python-multipart yt-dlp
 ```
 
-## 세부 내용
+## Features
 
 모든 운율을 분석하는 데에 있어서 음성인식 모델로는 openai의 whisper를 사용하였으며, 사용자의 음성은 spectral subtraction을 통해 노이즈 전처리 과정을 거친 후 운율을 분석한다. 다음은 운율을 분석하는 과정을 나타낸 플로우 차트이다. 
 <div align="center">
@@ -58,7 +58,7 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
   [그림 1] 운율 분석 처리 과정
 </div>
 
-### Pitch 분석
+### Pitch Analysis
 
 - **음절 단위 Pitch 분석**: 한국어 억양 특성을 반영해, 단어를 음절로 분해 후 각 음절별 pitch 계산
 - **기법**: PYIN 알고리즘으로 pitch 추출 → 중간값을 대표 pitch로 사용
@@ -78,7 +78,7 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
 </div>
 시각화된 분석 결과는 base64로 인코딩되어 웹에서 바로 표시할 수 있도록 처리하였다.
 
-### Intensity 분석
+### Intensity Analysis
 
 - **단어 단위 강세 분석**: Whisper의 단어별 timestamp로 각 구간을 분할하고 RMS 에너지 계산
 - **기법**: Librosa를 사용하여 각 단어 구간의 평균 에너지를 추출
@@ -89,7 +89,7 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
 
 
 
-### Duration 분석
+### Duration Analysis
 
 - **단어 발화 길이 분석**: Whisper의 timestamp로 각 단어의 발화 지속시간 계산
 - **기법**: 사용자와 원어민의 각 단어 duration을 계산하여 DTW(Dynamic Time Warping)로 정렬 후 비교
@@ -100,7 +100,7 @@ pip install librosa==0.11.0 soundfile==0.13.1 numpy==2.1.3 scipy==1.15.2 torch==
   - 점수 = `max(0, 100 × (1 - MAE))`
   - MAE가 클수록 감점
 
-#### 최종 결과
+#### Final Result
 최종적으로 분석된 사용자의 음성은 다음과 같이 json 형식으로 반환되며, 각 분석 결과별로 사용자 음성, 원어민 음성, 평가 결과, 피드백 메세지를 포함하여 웹 서버로 전달된다. 이 데이터는 프론트엔드에서 실시간 시각화 및 학습자 피드백 제공에 활용된다.
 
 ```bash
